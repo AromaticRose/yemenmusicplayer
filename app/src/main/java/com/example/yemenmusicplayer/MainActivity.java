@@ -2,6 +2,7 @@ package com.example.yemenmusicplayer;
 
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -20,6 +21,8 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "YemenPlayer";
+
     private TabLayout tabLayout;
     private ViewPager2 viewPager;
 
@@ -28,11 +31,13 @@ public class MainActivity extends AppCompatActivity {
     private Button playPauseButton, prevButton, nextButton;
     private SeekBar songProgressBar;
     private Handler handler = new Handler();
+    private Runnable progressRunnable;
     private Song currentPlayingSong;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.d(TAG, "onCreate reached");
         setContentView(R.layout.activity_main);
 
         tabLayout = findViewById(R.id.tabLayout);
@@ -56,55 +61,73 @@ public class MainActivity extends AppCompatActivity {
         songProgressBar = findViewById(R.id.songProgressBar);
 
         playPauseButton.setOnClickListener(v -> {
-            if (musicPlayer.isPlaying()) {
+            if (musicPlayer != null && musicPlayer.isPlaying()) {
                 musicPlayer.pause();
                 playPauseButton.setText("Play");
             } else {
-                if (currentPlayingSong != null) {
+                if (currentPlayingSong != null && musicPlayer != null) {
                     musicPlayer.play(currentPlayingSong.getStreamUrl());
                     playPauseButton.setText("Pause");
                 }
             }
         });
 
-        // Update seek bar progress
-        MainActivity.this.runOnUiThread(new Runnable() {
+        // Update seek bar progress using handler so we can remove callbacks in onDestroy
+        progressRunnable = new Runnable() {
             @Override
             public void run() {
-                if(musicPlayer != null && musicPlayer.isPlaying()){
+                if (musicPlayer != null && songProgressBar != null && musicPlayer.isPlaying()) {
                     int mCurrentPosition = musicPlayer.getCurrentPosition() / 1000;
                     songProgressBar.setProgress(mCurrentPosition);
                 }
                 handler.postDelayed(this, 1000);
             }
-        });
+        };
+        handler.post(progressRunnable);
 
-        songProgressBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if(musicPlayer != null && fromUser){
-                    musicPlayer.seekTo(progress * 1000);
+        if (songProgressBar != null) {
+            songProgressBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    if(musicPlayer != null && fromUser){
+                        musicPlayer.seekTo(progress * 1000);
+                    }
                 }
-            }
 
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
 
-            }
+                }
 
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
 
-            }
-        });
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.d(TAG, "onResume reached");
     }
 
     public void playSong(Song song) {
         currentPlayingSong = song;
-        currentSongTitle.setText(song.getTitle());
-        musicPlayer.play(song.getStreamUrl());
-        playPauseButton.setText("Pause");
-        songProgressBar.setMax(musicPlayer.getDuration() / 1000);
+        if (currentSongTitle != null) {
+            currentSongTitle.setText(song.getTitle());
+        }
+        if (musicPlayer != null) {
+            musicPlayer.play(song.getStreamUrl());
+            if (playPauseButton != null) playPauseButton.setText("Pause");
+            if (songProgressBar != null) {
+                int duration = musicPlayer.getDuration();
+                if (duration > 0) {
+                    songProgressBar.setMax(duration / 1000);
+                }
+            }
+        }
     }
 
     private static class ViewPagerAdapter extends FragmentStateAdapter {
@@ -139,10 +162,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (handler != null && progressRunnable != null) {
+            handler.removeCallbacks(progressRunnable);
+        }
         if (musicPlayer != null) {
             musicPlayer.stop();
         }
     }
 }
-
-
